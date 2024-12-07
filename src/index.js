@@ -1,3 +1,5 @@
+let nextUnitOfWork = null;
+
 function createTextElement(text) {
   return {
     type: "TEXT_ELEMENT",
@@ -40,6 +42,21 @@ function render(element, container) {
 
   container.appendChild(dom);
 }
+
+function workLoop(deadLine) {
+  let shouldYield = false;
+
+  while (nextUnitOfWork && !shouldYield) {
+    nextUnitOfWork = performUnitOfWork(nextUnitOfWork);
+    shouldYield = deadLine.timeRemaining() < 1;
+  }
+
+  requestIdleCallback(workLoop);
+}
+
+function performUnitOfWork(nextUnitOfWork) {}
+
+requestIdleCallback(workLoop);
 
 const MiniReact = {
   createElement,
