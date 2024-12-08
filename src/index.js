@@ -2,6 +2,8 @@ let nextUnitOfWork = null;
 let wipRoot = null;
 let currentRoot = null;
 let deletions = null;
+let wipFiber = null;
+let hookIndex = null;
 
 function createTextElement(text) {
   return {
@@ -63,23 +65,23 @@ const isProperty = (key) => key !== "children" && !isEvent(key);
 const isNew = (prev, next) => (key) => prev[key] !== next[key];
 const isGone = (_prev, next) => (key) => !(key in next);
 
-Object.keys(prevProps)
-  .filter(isEvent)
-  .filter(isNew(prevProps, nextProps) || isGone(prevProps, nextProps))
-  .forEach((name) => {
-    const eventType = name.toLowerCase().substring(2);
-    prevProps.dom.removeEventListener(eventType, prevProps[name]);
-  });
-
-Object.keys(nextProps)
-  .filter(isEvent)
-  .filter(isNew(prevProps, nextProps))
-  .forEach((name) => {
-    const eventType = name.toLowerCase().substring(2);
-    prevProps.dom.addEventListener(eventType, prevProps[name]);
-  });
-
 function updateDom(dom, prevProps, nextProps) {
+  Object.keys(prevProps)
+    .filter(isEvent)
+    .filter((key) => !(key in nextProps) || isNew(prevProps, nextProps)(key))
+    .forEach((name) => {
+      const eventType = name.toLowerCase().substring(2);
+      prevProps.dom.removeEventListener(eventType, prevProps[name]);
+    });
+
+  Object.keys(nextProps)
+    .filter(isEvent)
+    .filter(isNew(prevProps, nextProps))
+    .forEach((name) => {
+      const eventType = name.toLowerCase().substring(2);
+      prevProps.dom.addEventListener(eventType, prevProps[name]);
+    });
+
   Object.keys(prevProps)
     .filter(isProperty)
     .filter(isGone(prevProps, nextProps))
@@ -133,21 +135,22 @@ function reconcileChildren(wipFiber, elements) {
   let previousSibling = null;
   let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
 
-  while (index < elements.length || oldFiber) {
+  while (index < elements.length || oldFiber != null) {
     const element = elements[index];
     const newFiber = null;
     const sameType = oldFiber && element && oldFiber.type === element.type;
 
     if (sameType) {
       newFiber = {
-        type: oldFiber.typ,
+        type: oldFiber.type,
         props: element.props,
         dom: oldFiber.dom,
         parent: wipFiber,
         alternate: oldFiber,
         effectTag: "UPDATE",
       };
-    } else if (element && !sameType) {
+    }
+    if (element && !sameType) {
       newFiber = {
         type: element.type,
         props: element.props,
@@ -156,14 +159,15 @@ function reconcileChildren(wipFiber, elements) {
         alternate: null,
         effectTag: "PLACEMENT",
       };
-    } else if (oldFiber && !sameType) {
+    }
+    if (oldFiber && !sameType) {
       oldFiber.effectTag = "DELETION";
       deletions.push(oldFiber);
     }
 
     if (index === 0) {
       wipFiber.child = newFiber;
-    } else {
+    } else if (element) {
       previousSibling.sibling = newFiber;
     }
 
@@ -187,21 +191,24 @@ function updateHostComponent(fiber) {
 }
 
 function updateFunctionComponent(fiber) {
+  wipFiber = fiber;
+  wipFiber.hooks = [];
+  hookIndex = 0;
   const children = [fiber.type(fiber.props)];
   reconcileChildren(fiber, children);
 }
 
 function performUnitOfWork(fiber) {
-  if (fiber.child) {
-    return fiber.child;
-  }
-
   const isFunctionComponent = fiber.type instanceof Function;
 
   if (isFunctionComponent) {
     updateFunctionComponent(fiber);
   } else {
     updateHostComponent(fiber);
+  }
+
+  if (fiber.child) {
+    return fiber.child;
   }
 
   let nextFiber = fiber;
@@ -233,17 +240,52 @@ function workLoop(deadLine) {
 
 requestIdleCallback(workLoop);
 
+function useState(initialState) {
+  const oldHook =
+    wipFiber.alternate &&
+    wipFiber.alternate.hooks &&
+    wipFiber.alternate.hooks[hookIndex];
+  const hook = {
+    state: oldHook ? oldHook.state : initialState,
+    queue: [],
+  };
+
+  const actions = oldHook ? oldHook.queue : [];
+
+  actions.forEach((action) => {
+    hook.state = action(hook.state);
+  });
+
+  const setState = (action) => {
+    hook.queue.push(action);
+
+    wipRoot = {
+      dom: currentRoot.dom,
+      pops: currentRoot.pops,
+      alternate: currentRoot,
+    };
+    nextUnitOfWork = wipRoot;
+    deletions = [];
+  };
+
+  wipFiber.hooks.push(hook);
+  hookIndex++;
+
+  return [hook.state, setState];
+}
+
 const MiniReact = {
   render,
+  useState,
   createElement,
 };
 
 /** @jsx MiniReact.createElement */
-function App(props) {
-  return <h1>Hi {props.name}</h1>;
+function Counter(_props) {
+  const [counter, setCounter] = MiniReact.useState(0);
+  return <h1 onClick={() => setCounter((c) => c + 1)}>{counter}</h1>;
 }
 
-const element = <App name="Sahil" />;
-
+const element = <Counter name="Sahil" />;
 const root = document.getElementById("root");
 MiniReact.render(element, root);
