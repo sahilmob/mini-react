@@ -1,5 +1,7 @@
 let nextUnitOfWork = null;
 let wipRoot = null;
+let currentRoot = null;
+let deletions = null;
 
 function createTextElement(text) {
   return {
@@ -48,23 +50,115 @@ function render(element, container) {
     props: {
       children: [element],
     },
+    alternate: currentRoot,
   };
 
+  deletions = [];
+
   nextUnitOfWork = wipRoot;
+}
+
+const isEvent = (key) => key.startsWith("on");
+const isProperty = (key) => key !== "children" && !isEvent(key);
+const isNew = (prev, next) => (key) => prev[key] !== next[key];
+const isGone = (_prev, next) => (key) => !(key in next);
+
+Object.keys(prevProps)
+  .filter(isEvent)
+  .filter(isNew(prevProps, nextProps) || isGone(prevProps, nextProps))
+  .forEach((name) => {
+    const eventType = name.toLowerCase().substring(2);
+    prevProps.dom.removeEventListener(eventType, prevProps[name]);
+  });
+
+Object.keys(nextProps)
+  .filter(isEvent)
+  .filter(isNew(prevProps, nextProps))
+  .forEach((name) => {
+    const eventType = name.toLowerCase().substring(2);
+    prevProps.dom.addEventListener(eventType, prevProps[name]);
+  });
+
+function updateDom(dom, prevProps, nextProps) {
+  Object.keys(prevProps)
+    .filter(isProperty)
+    .filter(isGone(prevProps, nextProps))
+    .forEach((name) => (dom[name] = ""));
+
+  Object.keys(nextProps)
+    .filter(isProperty)
+    .filter(isNew(prevProps, nextProps))
+    .forEach((name) => (dom[name] = nextProps[name]));
 }
 
 function commitWork(fiber) {
   if (!fiber) return;
   const domParent = fiber.parent.dom;
-  domParent.appendChild(fiber.dom);
+  if (fiber.effectTag === "PLACEMENT" && fiber.dom !== null) {
+    domParent.appendChild(fiber.dom);
+  } else if (fiber.effectTag === "DELETION") {
+    domParent.removeChild(fiber.dom);
+  } else if (fiber.effectTag === "UPDATE" && fiber.dom !== null) {
+    updateDom(fiber.dom, fiber.alternate.pops, fiber.props);
+  }
 
   commitWork(fiber.child);
   commitWork(fiber.sibling);
 }
 
 function commitRoot() {
+  deletions.forEach((fiber) => commitWork(fiber));
   commitWork(wipRoot.child);
+  currentRoot = wipRoot;
   wipRoot = null;
+}
+
+function reconcileChildren(wipFiber, elements) {
+  let index = 0;
+  let previousSibling = null;
+  let oldFiber = wipFiber.alternate && wipFiber.alternate.child;
+
+  while (index < elements.length || oldFiber) {
+    const element = elements[index];
+    const newFiber = null;
+    const sameType = oldFiber && element && oldFiber.type === element.type;
+
+    if (sameType) {
+      newFiber = {
+        type: oldFiber.typ,
+        props: element.props,
+        dom: oldFiber.dom,
+        parent: wipFiber,
+        alternate: oldFiber,
+        effectTag: "UPDATE",
+      };
+    } else if (element && !sameType) {
+      newFiber = {
+        type: element.type,
+        props: element.props,
+        dom: null,
+        parent: wipFiber,
+        alternate: null,
+        effectTag: "PLACEMENT",
+      };
+    } else if (oldFiber && !sameType) {
+      oldFiber.effectTag = "DELETION";
+      deletions.push(oldFiber);
+    }
+
+    if (index === 0) {
+      wipFiber.child = newFiber;
+    } else {
+      previousSibling.sibling = newFiber;
+    }
+
+    if (oldFiber) {
+      oldFiber = oldFiber.sibling;
+    }
+
+    previousSibling = newFiber;
+    index++;
+  }
 }
 
 function performUnitOfWork(fiber) {
@@ -74,27 +168,7 @@ function performUnitOfWork(fiber) {
 
   const elements = fiber.props.children;
 
-  let index = 0;
-  let previousSibling = null;
-
-  while (index < elements.length) {
-    const element = elements[index];
-    const newFiber = {
-      type: element.type,
-      props: element.props,
-      parent: fiber,
-      dom: null,
-    };
-
-    if (index === 0) {
-      fiber.child = newFiber;
-    } else {
-      previousSibling.sibling = newFiber;
-    }
-
-    previousSibling = newFiber;
-    index++;
-  }
+  reconcileChildren(fiber, elements);
 
   if (fiber.child) {
     return fiber.child;
@@ -130,8 +204,8 @@ function workLoop(deadLine) {
 requestIdleCallback(workLoop);
 
 const MiniReact = {
+  render,
   createElement,
-  createDom,
 };
 
 /** @jsx MiniReact.createElement */
@@ -142,4 +216,4 @@ const element = (
 );
 
 const root = document.getElementById("root");
-MiniReact.createDom(element, root);
+MiniReact.render(element, root);
