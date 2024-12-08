@@ -26,21 +26,77 @@ function createElement(type, props, ...children) {
   };
 }
 
-function render(element, container) {
+function createDom(fiber) {
   const dom =
-    element.type === "TEXT_ELEMENT"
+    fiber.type === "TEXT_ELEMENT"
       ? document.createTextNode("")
-      : document.createElement(element.type);
+      : document.createElement(fiber.type);
 
-  Object.keys(element.props).forEach((prop) => {
+  Object.keys(fiber.props).forEach((prop) => {
     if (prop !== "children") {
-      dom[prop] = element.props[prop];
+      dom[prop] = fiber.props[prop];
     }
   });
 
-  element.props.children.forEach((c) => render(c, dom));
+  return dom;
+}
 
-  container.appendChild(dom);
+function render(element, container) {
+  nextUnitOfWork = {
+    dom: container,
+    props: {
+      children: [element],
+    },
+  };
+}
+
+function performUnitOfWork(fiber) {
+  if (!fiber.dom) {
+    fiber.dom = createDom(fiber);
+  }
+
+  if (fiber.parent) {
+    fiber.parent.dom.appendChild(fiber.dom);
+  }
+
+  const elements = fiber.props.children;
+
+  let index = 0;
+  let previousSibling = null;
+
+  while (index < elements.length) {
+    const element = elements[index];
+    const newFiber = {
+      type: element.type,
+      props: element.props,
+      parent: fiber,
+      dom: null,
+    };
+
+    if (index === 0) {
+      fiber.child = newFiber;
+    } else {
+      previousSibling.sibling = newFiber;
+    }
+
+    previousSibling = newFiber;
+    index++;
+  }
+
+  if (fiber.child) {
+    return fiber.child;
+  }
+
+  let nextFiber = fiber;
+
+  while (nextFiber) {
+    if (nextFiber.sibling) {
+      return nextFiber.sibling;
+    }
+    nextFiber = fiber.parent;
+  }
+
+  return nextFiber;
 }
 
 function workLoop(deadLine) {
@@ -54,13 +110,11 @@ function workLoop(deadLine) {
   requestIdleCallback(workLoop);
 }
 
-function performUnitOfWork(nextUnitOfWork) {}
-
 requestIdleCallback(workLoop);
 
 const MiniReact = {
   createElement,
-  render,
+  createDom,
 };
 
 /** @jsx MiniReact.createElement */
@@ -71,4 +125,4 @@ const element = (
 );
 
 const root = document.getElementById("root");
-MiniReact.render(element, root);
+MiniReact.createDom(element, root);
