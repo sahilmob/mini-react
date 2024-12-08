@@ -217,7 +217,7 @@ function performUnitOfWork(fiber) {
     if (nextFiber.sibling) {
       return nextFiber.sibling;
     }
-    nextFiber = fiber.parent;
+    nextFiber = nextFiber.parent;
   }
 
   return nextFiber;
@@ -261,7 +261,7 @@ function useState(initialState) {
 
     wipRoot = {
       dom: currentRoot.dom,
-      pops: currentRoot.pops,
+      pops: currentRoot.props,
       alternate: currentRoot,
     };
     nextUnitOfWork = wipRoot;
