@@ -91,13 +91,28 @@ function updateDom(dom, prevProps, nextProps) {
     .forEach((name) => (dom[name] = nextProps[name]));
 }
 
+function commitDeletion(fiber, domParent) {
+  if (fiber.dom) {
+    domParent.removeChild(fiber.dom);
+  } else {
+    commitDeletion(fiber.child, domParent);
+  }
+}
+
 function commitWork(fiber) {
   if (!fiber) return;
-  const domParent = fiber.parent.dom;
+  let domParentFiber = fiber.parent;
+
+  while (!domParentFiber.dom) {
+    domParentFiber = domParentFiber.parent;
+  }
+
+  const domParent = domParentFiber.dom;
+
   if (fiber.effectTag === "PLACEMENT" && fiber.dom !== null) {
     domParent.appendChild(fiber.dom);
   } else if (fiber.effectTag === "DELETION") {
-    domParent.removeChild(fiber.dom);
+    commitDeletion(fiber, domParent);
   } else if (fiber.effectTag === "UPDATE" && fiber.dom !== null) {
     updateDom(fiber.dom, fiber.alternate.pops, fiber.props);
   }
@@ -161,7 +176,7 @@ function reconcileChildren(wipFiber, elements) {
   }
 }
 
-function performUnitOfWork(fiber) {
+function updateHostComponent(fiber) {
   if (!fiber.dom) {
     fiber.dom = createDom(fiber);
   }
@@ -169,9 +184,24 @@ function performUnitOfWork(fiber) {
   const elements = fiber.props.children;
 
   reconcileChildren(fiber, elements);
+}
 
+function updateFunctionComponent(fiber) {
+  const children = [fiber.type(fiber.props)];
+  reconcileChildren(fiber, children);
+}
+
+function performUnitOfWork(fiber) {
   if (fiber.child) {
     return fiber.child;
+  }
+
+  const isFunctionComponent = fiber.type instanceof Function;
+
+  if (isFunctionComponent) {
+    updateFunctionComponent(fiber);
+  } else {
+    updateHostComponent(fiber);
   }
 
   let nextFiber = fiber;
@@ -209,11 +239,11 @@ const MiniReact = {
 };
 
 /** @jsx MiniReact.createElement */
-const element = (
-  <div style="background: orange; color: white">
-    <h1 title="web dev made simple">Some Text</h1>
-  </div>
-);
+function App(props) {
+  return <h1>Hi {props.name}</h1>;
+}
+
+const element = <App name="Sahil" />;
 
 const root = document.getElementById("root");
 MiniReact.render(element, root);
