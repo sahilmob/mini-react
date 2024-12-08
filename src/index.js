@@ -71,7 +71,7 @@ function updateDom(dom, prevProps, nextProps) {
     .filter((key) => !(key in nextProps) || isNew(prevProps, nextProps)(key))
     .forEach((name) => {
       const eventType = name.toLowerCase().substring(2);
-      prevProps.dom.removeEventListener(eventType, prevProps[name]);
+      dom.removeEventListener(eventType, prevProps[name]);
     });
 
   Object.keys(nextProps)
@@ -79,7 +79,7 @@ function updateDom(dom, prevProps, nextProps) {
     .filter(isNew(prevProps, nextProps))
     .forEach((name) => {
       const eventType = name.toLowerCase().substring(2);
-      prevProps.dom.addEventListener(eventType, prevProps[name]);
+      dom.addEventListener(eventType, prevProps[name]);
     });
 
   Object.keys(prevProps)
@@ -116,7 +116,7 @@ function commitWork(fiber) {
   } else if (fiber.effectTag === "DELETION") {
     commitDeletion(fiber, domParent);
   } else if (fiber.effectTag === "UPDATE" && fiber.dom !== null) {
-    updateDom(fiber.dom, fiber.alternate.pops, fiber.props);
+    updateDom(fiber.dom, fiber.alternate.props, fiber.props);
   }
 
   commitWork(fiber.child);
@@ -261,7 +261,7 @@ function useState(initialState) {
 
     wipRoot = {
       dom: currentRoot.dom,
-      pops: currentRoot.props,
+      props: currentRoot.props,
       alternate: currentRoot,
     };
     nextUnitOfWork = wipRoot;
@@ -283,7 +283,7 @@ const MiniReact = {
 /** @jsx MiniReact.createElement */
 function Counter(_props) {
   const [counter, setCounter] = MiniReact.useState(0);
-  return <h1 onClick={() => setCounter((c) => c + 1)}>{counter}</h1>;
+  return <h1 onclick={() => setCounter((c) => c + 1)}>{counter}</h1>;
 }
 
 const element = <Counter name="Sahil" />;
